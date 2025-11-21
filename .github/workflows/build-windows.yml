@@ -32,6 +32,11 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Generate Windows ICO file
+        run: |
+          python src-tauri/icons/create_ico.py
+          file src-tauri/icons/icon.ico
+
       - name: Verify Rust installation
         run: |
           rustc --version
