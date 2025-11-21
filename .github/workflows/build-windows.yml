@@ -32,6 +32,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Verify Rust installation
+        run: |
+          rustc --version
+          cargo --version
+          rustup target list --installed
+
       - name: Build Tauri app for Windows
         uses: tauri-apps/tauri-action@v0
         env:
@@ -44,6 +50,7 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: --target x86_64-pc-windows-msvc
+        continue-on-error: false
 
       - name: Upload Windows artifacts (NSIS .exe)
         if: github.event_name != 'pull_request'
