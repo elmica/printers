@@ -25,17 +25,32 @@ const PrinterManagement: React.FC<PrinterManagementProps> = ({
   const [showForm, setShowForm] = useState(false);
   const [editingPrinter, setEditingPrinter] = useState<PrinterConfig | null>(null);
   const [systemPrinters, setSystemPrinters] = useState<string[]>([]);
+  const [loadingPrinters, setLoadingPrinters] = useState(true);
+  const [printerError, setPrinterError] = useState<string | null>(null);
 
   useEffect(() => {
     loadSystemPrinters();
   }, []);
 
   const loadSystemPrinters = async () => {
+    setLoadingPrinters(true);
+    setPrinterError(null);
     try {
+      console.log("Loading system printers...");
       const printers = await invoke<string[]>("get_system_printers");
+      console.log("Loaded system printers:", printers);
       setSystemPrinters(printers);
-    } catch (error) {
+      if (printers.length === 0) {
+        setPrinterError("No printers found on this system. Make sure you have printers installed in Windows.");
+      }
+    } catch (error: any) {
+      const errorMessage = error?.message || error?.toString() || "Unknown error";
       console.error("Failed to load system printers:", error);
+      setPrinterError(`Failed to load printers: ${errorMessage}`);
+      // Set empty array so the form can still be shown
+      setSystemPrinters([]);
+    } finally {
+      setLoadingPrinters(false);
     }
   };
 
@@ -70,6 +85,35 @@ const PrinterManagement: React.FC<PrinterManagementProps> = ({
         <h2>Printers</h2>
         <button onClick={handleAdd}>Add Printer</button>
       </div>
+
+      {printerError && (
+        <div style={{ 
+          padding: "10px", 
+          marginBottom: "10px", 
+          backgroundColor: "#fee", 
+          border: "1px solid #fcc",
+          borderRadius: "4px",
+          color: "#c33"
+        }}>
+          <strong>Warning:</strong> {printerError}
+          <button 
+            onClick={loadSystemPrinters} 
+            style={{ 
+              marginLeft: "10px", 
+              padding: "4px 8px",
+              cursor: "pointer"
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {loadingPrinters && (
+        <div style={{ padding: "10px", marginBottom: "10px", color: "#666" }}>
+          Loading system printers...
+        </div>
+      )}
 
       {showForm && (
         <PrinterForm

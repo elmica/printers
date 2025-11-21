@@ -25,19 +25,67 @@ pub fn get_system_printers() -> Result<Vec<String>, String> {
     {
         // Windows: Use PowerShell to list printers
         use std::process::Command;
+        
+        // Try PowerShell method first
         let output = Command::new("powershell")
             .args(&[
+                "-NoProfile",
+                "-ExecutionPolicy", "Bypass",
                 "-Command",
                 "Get-Printer | Select-Object -ExpandProperty Name | ConvertTo-Json -AsArray"
             ])
-            .output()
-            .map_err(|e| format!("Failed to get printers: {}", e))?;
+            .output();
         
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let printers: Vec<String> = serde_json::from_str(&stdout)
-            .unwrap_or_else(|_| vec![]);
-        Ok(printers)
+        match output {
+            Ok(result) => {
+                if !result.status.success() {
+                    let stderr = String::from_utf8_lossy(&result.stderr);
+                    eprintln!("PowerShell error: {}", stderr);
+                    
+                    // Fallback: Try wmic command
+                    return get_printers_wmic();
+                }
+                
+                let stdout = String::from_utf8_lossy(&result.stdout);
+                eprintln!("PowerShell output: {}", stdout);
+                
+                match serde_json::from_str::<Vec<String>>(&stdout) {
+                    Ok(printers) => {
+                        eprintln!("Successfully parsed {} printers", printers.len());
+                        Ok(printers)
+                    }
+                    Err(e) => {
+                        eprintln!("Failed to parse JSON: {}. Output: {}", e, stdout);
+                        // Fallback: Try parsing line by line if it's not JSON
+                        let printers: Vec<String> = stdout
+                            .lines()
+                            .filter_map(|line| {
+                                let trimmed = line.trim();
+                                if !trimmed.is_empty() && !trimmed.starts_with('[') && !trimmed.starts_with(']') {
+                                    Some(trimmed.trim_matches('"').to_string())
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect();
+                        
+                        if !printers.is_empty() {
+                            Ok(printers)
+                        } else {
+                            // Last resort: try wmic
+                            get_printers_wmic()
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to execute PowerShell: {}", e);
+                // Fallback: Try wmic command
+                get_printers_wmic()
+            }
+        }
     }
+    
     
     #[cfg(target_os = "macos")]
     {
@@ -66,6 +114,46 @@ pub fn get_system_printers() -> Result<Vec<String>, String> {
     {
         Ok(vec![])
     }
+}
+
+#[cfg(target_os = "windows")]
+fn get_printers_wmic() -> Result<Vec<String>, String> {
+    use std::process::Command;
+    
+    // Fallback: Use wmic to get printers
+    let output = Command::new("wmic")
+        .args(&["printer", "get", "name", "/value"])
+        .output()
+        .map_err(|e| format!("Failed to execute wmic: {}", e))?;
+    
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let printers: Vec<String> = stdout
+        .lines()
+        .filter_map(|line| {
+            if line.starts_with("Name=") {
+                let name = line.strip_prefix("Name=")?.trim();
+                if !name.is_empty() {
+                    Some(name.to_string())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+    
+    if printers.is_empty() {
+        Err("No printers found on the system".to_string())
+    } else {
+        eprintln!("Found {} printers using wmic", printers.len());
+        Ok(printers)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn get_printers_wmic() -> Result<Vec<String>, String> {
+    Err("wmic only available on Windows".to_string())
 }
 
 #[command]
