@@ -27,10 +27,14 @@ pub fn get_system_printers() -> Result<Vec<String>, String> {
         use std::process::Command;
         
         // Try PowerShell method first
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
         let output = Command::new("powershell")
+            .creation_flags(CREATE_NO_WINDOW)
             .args(&[
                 "-NoProfile",
                 "-ExecutionPolicy", "Bypass",
+                "-WindowStyle", "Hidden",
                 "-Command",
                 "Get-Printer | Select-Object -ExpandProperty Name | ConvertTo-Json -AsArray"
             ])
@@ -40,6 +44,7 @@ pub fn get_system_printers() -> Result<Vec<String>, String> {
             Ok(result) => {
                 if !result.status.success() {
                     let stderr = String::from_utf8_lossy(&result.stderr);
+                    #[cfg(debug_assertions)]
                     eprintln!("PowerShell error: {}", stderr);
                     
                     // Fallback: Try wmic command
@@ -47,14 +52,17 @@ pub fn get_system_printers() -> Result<Vec<String>, String> {
                 }
                 
                 let stdout = String::from_utf8_lossy(&result.stdout);
+                #[cfg(debug_assertions)]
                 eprintln!("PowerShell output: {}", stdout);
                 
                 match serde_json::from_str::<Vec<String>>(&stdout) {
                     Ok(printers) => {
+                        #[cfg(debug_assertions)]
                         eprintln!("Successfully parsed {} printers", printers.len());
                         Ok(printers)
                     }
                     Err(e) => {
+                        #[cfg(debug_assertions)]
                         eprintln!("Failed to parse JSON: {}. Output: {}", e, stdout);
                         // Fallback: Try parsing line by line if it's not JSON
                         let printers: Vec<String> = stdout
@@ -79,6 +87,7 @@ pub fn get_system_printers() -> Result<Vec<String>, String> {
                 }
             }
             Err(e) => {
+                #[cfg(debug_assertions)]
                 eprintln!("Failed to execute PowerShell: {}", e);
                 // Fallback: Try wmic command
                 get_printers_wmic()
@@ -143,12 +152,13 @@ fn get_printers_wmic() -> Result<Vec<String>, String> {
         })
         .collect();
     
-    if printers.is_empty() {
-        Err("No printers found on the system".to_string())
-    } else {
-        eprintln!("Found {} printers using wmic", printers.len());
-        Ok(printers)
-    }
+        if printers.is_empty() {
+            Err("No printers found on the system".to_string())
+        } else {
+            #[cfg(debug_assertions)]
+            eprintln!("Found {} printers using wmic", printers.len());
+            Ok(printers)
+        }
 }
 
 #[cfg(not(target_os = "windows"))]

@@ -60,6 +60,7 @@ impl FileWatcher {
                             .collect();
                         
                         if !spl_files.is_empty() {
+                            #[cfg(debug_assertions)]
                             eprintln!("Event received with {} .spl file(s)", spl_files.len());
                             
                             let total_files = spl_files.len();
@@ -77,6 +78,7 @@ impl FileWatcher {
                                 
                                 if !already_processed && !already_pending {
                                     let file_idx = idx; // Capture index for use in closure
+                                    #[cfg(debug_assertions)]
                                     eprintln!("[{}/{}] New file detected: {:?}", file_idx + 1, total_files, file_path_buf);
                                     
                                     // Mark as pending immediately
@@ -100,13 +102,17 @@ impl FileWatcher {
                                         // Wait for file to be fully copied (macOS paste operation delay)
                                         // Use a small staggered delay per file to avoid conflicts
                                         let delay = 1000u64 + ((file_idx as u64) * 100);
+                                        #[cfg(debug_assertions)]
                                         eprintln!("Waiting {}ms before processing file {}/{}: {}", delay, file_idx + 1, total_files_captured, file_name);
                                         std::thread::sleep(Duration::from_millis(delay));
                                         
+                                        #[cfg(debug_assertions)]
                                         eprintln!("Starting to process file {}/{}: {}", file_idx + 1, total_files_captured, file_name);
                                         if let Err(e) = handle_file_created(&file_path_for_log, &app_handle_spawn) {
+                                            #[cfg(debug_assertions)]
                                             eprintln!("Error handling file {:?}: {}", file_path_for_log, e);
                                         } else {
+                                            #[cfg(debug_assertions)]
                                             eprintln!("Successfully processed file {}/{}: {}", file_idx + 1, total_files_captured, file_name);
                                         }
                                         
@@ -122,14 +128,18 @@ impl FileWatcher {
                                             pending.remove(&file_path_for_log);
                                         }
                                     });
-                                } else {
-                                    eprintln!("File already processed or pending: {:?}", file_path_buf);
-                                }
+                                    } else {
+                                        #[cfg(debug_assertions)]
+                                        eprintln!("File already processed or pending: {:?}", file_path_buf);
+                                    }
                             }
                         }
                     }
                 }
-                Err(e) => eprintln!("Watcher error: {:?}", e),
+                Err(e) => {
+                    #[cfg(debug_assertions)]
+                    eprintln!("Watcher error: {:?}", e);
+                }
             }
         })?;
         
@@ -153,6 +163,7 @@ fn handle_file_created(file_path: &Path, app_handle: &AppHandle) -> Result<(), B
     use std::thread;
     
     let path_str = file_path.to_str().ok_or("Invalid path")?;
+    #[cfg(debug_assertions)]
     eprintln!("Attempting to read file: {}", path_str);
     
     // Retry reading the file in case it's still being written
@@ -163,12 +174,14 @@ fn handle_file_created(file_path: &Path, app_handle: &AppHandle) -> Result<(), B
     let content = loop {
         // Check if file exists and log the attempt
         if !file_path.exists() {
+            #[cfg(debug_assertions)]
             eprintln!("File does not exist yet, retries remaining: {}", retries);
             if retries > 0 {
                 retries -= 1;
                 thread::sleep(Duration::from_millis(200));
                 continue;
             } else {
+                #[cfg(debug_assertions)]
                 eprintln!("File still does not exist after all retries: {}", path_str);
                 return Err(format!("File does not exist after retries: {}", path_str).into());
             }
@@ -180,12 +193,14 @@ fn handle_file_created(file_path: &Path, app_handle: &AppHandle) -> Result<(), B
                 // Check if file size is stable (file is complete)
                 if let Ok(metadata) = std::fs::metadata(file_path) {
                     let current_size = metadata.len();
+                    #[cfg(debug_assertions)]
                     eprintln!("File size: {} bytes (attempt {})", current_size, 31 - retries);
                     
                     if current_size == last_size && current_size > 0 {
                         stable_count += 1;
                         // File size is stable for 2 checks, assume it's complete
                         if stable_count >= 2 {
+                            #[cfg(debug_assertions)]
                             eprintln!("File size stable, reading content");
                             break data;
                         }
@@ -200,11 +215,13 @@ fn handle_file_created(file_path: &Path, app_handle: &AppHandle) -> Result<(), B
                     thread::sleep(Duration::from_millis(200));
                 } else {
                     // Use what we have if no more retries
+                    #[cfg(debug_assertions)]
                     eprintln!("No more retries, using current content");
                     break data;
                 }
             }
             Err(e) => {
+                #[cfg(debug_assertions)]
                 eprintln!("Error reading file (retries: {}): {}", retries, e);
                 if retries > 0 && e.kind() == std::io::ErrorKind::NotFound {
                     retries -= 1;
@@ -217,6 +234,7 @@ fn handle_file_created(file_path: &Path, app_handle: &AppHandle) -> Result<(), B
         }
     };
     
+    #[cfg(debug_assertions)]
     eprintln!("Successfully read {} bytes from file: {}", content.len(), path_str);
     
     // Emit event to frontend
@@ -226,15 +244,23 @@ fn handle_file_created(file_path: &Path, app_handle: &AppHandle) -> Result<(), B
         "content": general_purpose::STANDARD.encode(&content)
     }))?;
     
+    #[cfg(debug_assertions)]
     eprintln!("Event emitted to frontend");
     
     // Delete the file after reading (only if it still exists)
     if file_path.exists() {
         match std::fs::remove_file(file_path) {
-            Ok(_) => eprintln!("File deleted successfully: {}", path_str),
-            Err(e) => eprintln!("Warning: Could not delete file {}: {}", path_str, e),
+            Ok(_) => {
+                #[cfg(debug_assertions)]
+                eprintln!("File deleted successfully: {}", path_str);
+            }
+            Err(e) => {
+                #[cfg(debug_assertions)]
+                eprintln!("Warning: Could not delete file {}: {}", path_str, e);
+            }
         }
     } else {
+        #[cfg(debug_assertions)]
         eprintln!("File no longer exists, skipping deletion: {}", path_str);
     }
     
